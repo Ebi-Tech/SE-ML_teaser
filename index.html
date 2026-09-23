@@ -120,7 +120,7 @@
 <div class="wrap">
   <header>
     <h1>SE + ML Quiz</h1>
-    <div class="score" id="score">0 answered</div>
+    <div class="score" id="score">0/10 answered</div>
   </header>
 
   <div id="app"></div>
@@ -133,9 +133,11 @@
 
 <script>
 const API_URL = "/api/generate-question";
+const ROUND_SIZE = 10;
 let log = [];       // {conceptId, category, topic, question, options, correctIndex, explanation, selectedIndex}
 let current = null; // the question currently on screen
 let asked = [];      // conceptIds asked this session, for excludeIds
+let roundComplete = false;
 
 const appEl = document.getElementById("app");
 const scoreEl = document.getElementById("score");
@@ -145,9 +147,11 @@ const restartBtn = document.getElementById("restartBtn");
 function updateScore() {
   const answered = log.filter(q => q.selectedIndex !== undefined);
   const correct = answered.filter(q => q.selectedIndex === q.correctIndex).length;
-  scoreEl.textContent = answered.length
-    ? `${correct}/${answered.length} correct`
-    : "0 answered";
+  if (roundComplete) {
+    scoreEl.textContent = `Round complete: ${correct}/${ROUND_SIZE} correct`;
+  } else {
+    scoreEl.textContent = `${answered.length}/${ROUND_SIZE} answered${answered.length ? ` · ${correct} correct so far` : ""}`;
+  }
   summaryBtn.style.display = answered.length ? "inline-block" : "none";
   restartBtn.style.display = log.length ? "inline-block" : "none";
 }
@@ -208,8 +212,14 @@ function selectOption(i) {
 
 function submitAndNext() {
   log.push(current);
-  updateScore();
-  loadQuestion();
+  if (log.length >= ROUND_SIZE) {
+    roundComplete = true;
+    updateScore();
+    renderSummary();
+  } else {
+    updateScore();
+    loadQuestion();
+  }
 }
 
 function renderSummary() {
@@ -228,6 +238,11 @@ function renderSummary() {
         </tr>`;
     }).join("");
 
+  const footer = roundComplete
+    ? `<p class="muted" style="margin:14px 0 0;">Round of ${ROUND_SIZE} finished.</p>
+       <div class="row"><button class="primary" onclick="restart()">Start new round</button></div>`
+    : `<div class="row"><button class="primary" onclick="loadQuestion()">Continue quiz</button></div>`;
+
   appEl.innerHTML = `
     <div class="card">
       <h2 style="margin-top:0;font-size:1.05rem;">Summary</h2>
@@ -239,7 +254,7 @@ function renderSummary() {
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <div class="row"><button class="primary" onclick="loadQuestion()">Continue quiz</button></div>
+      ${footer}
     </div>`;
 }
 
@@ -247,6 +262,7 @@ function restart() {
   log = [];
   asked = [];
   current = null;
+  roundComplete = false;
   updateScore();
   loadQuestion();
 }
