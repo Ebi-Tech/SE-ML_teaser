@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>SE + ML Quiz</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e7e9ee;
+    --muted: #9aa3b2;
+    --accent: #6ea8fe;
+    --good: #3ecf8e;
+    --bad: #ff6b6b;
+    --radius: 12px;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100%;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 24px 16px 60px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  h1 { font-size: 1.25rem; margin: 0; }
+  .score { color: var(--muted); font-size: 0.9rem; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 0.75rem;
+    color: var(--accent);
+    background: rgba(110,168,254,0.12);
+    padding: 3px 9px;
+    border-radius: 999px;
+    margin-bottom: 12px;
+  }
+  .question { font-size: 1.05rem; line-height: 1.5; margin-bottom: 16px; }
+  .option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  .option:hover:not(:disabled) { border-color: var(--accent); }
+  .option:disabled { cursor: default; }
+  .option.correct { border-color: var(--good); background: rgba(62,207,142,0.12); }
+  .option.wrong { border-color: var(--bad); background: rgba(255,107,107,0.12); }
+  .explanation {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: var(--panel-2);
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+  button.primary {
+    background: var(--accent);
+    color: #0f1115;
+    border: none;
+    border-radius: 10px;
+    padding: 11px 18px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 11px 18px;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .muted { color: var(--muted); }
+  .error { color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .pill { padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
+  .pill.good { background: rgba(62,207,142,0.15); color: var(--good); }
+  .pill.bad { background: rgba(255,107,107,0.15); color: var(--bad); }
+  .loading { color: var(--muted); text-align: center; padding: 30px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>SE + ML Quiz</h1>
+    <div class="score" id="score">0 answered</div>
+  </header>
+
+  <div id="app"></div>
+
+  <div class="row">
+    <button class="ghost" id="summaryBtn" style="display:none;">View summary</button>
+    <button class="ghost" id="restartBtn" style="display:none;">Restart</button>
+  </div>
+</div>
+
+<script>
+const API_URL = "/api/generate-question";
+let log = [];       // {conceptId, category, topic, question, options, correctIndex, explanation, selectedIndex}
+let current = null; // the question currently on screen
+let asked = [];      // conceptIds asked this session, for excludeIds
+
+const appEl = document.getElementById("app");
+const scoreEl = document.getElementById("score");
+const summaryBtn = document.getElementById("summaryBtn");
+const restartBtn = document.getElementById("restartBtn");
+
+function updateScore() {
+  const answered = log.filter(q => q.selectedIndex !== undefined);
+  const correct = answered.filter(q => q.selectedIndex === q.correctIndex).length;
+  scoreEl.textContent = answered.length
+    ? `${correct}/${answered.length} correct`
+    : "0 answered";
+  summaryBtn.style.display = answered.length ? "inline-block" : "none";
+  restartBtn.style.display = log.length ? "inline-block" : "none";
+}
+
+async function loadQuestion() {
+  appEl.innerHTML = `<div class="loading">Generating question…</div>`;
+  try {
+    const res = await fetch(`${API_URL}?exclude=${encodeURIComponent(asked.join(","))}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to generate question");
+    current = { ...data, selectedIndex: undefined };
+    asked.push(data.conceptId);
+    renderQuestion();
+  } catch (err) {
+    appEl.innerHTML = `
+      <div class="card">
+        <p class="error">${escapeHtml(err.message)}</p>
+        <div class="row"><button class="primary" onclick="loadQuestion()">Try again</button></div>
+      </div>`;
+  }
+}
+
+function renderQuestion() {
+  const q = current;
+  appEl.innerHTML = `
+    <div class="card">
+      <span class="tag">${escapeHtml(q.category)} · ${escapeHtml(q.topic)}</span>
+      <div class="question">${escapeHtml(q.question)}</div>
+      <div id="options"></div>
+      <div id="explanationSlot"></div>
+      <div class="row" id="nextRow" style="display:none;">
+        <button class="primary" onclick="submitAndNext()">Next question</button>
+      </div>
+    </div>`;
+  const optionsEl = document.getElementById("options");
+  q.options.forEach((opt, i) => {
+    const btn = document.createElement("button");
+    btn.className = "option";
+    btn.textContent = opt;
+    btn.onclick = () => selectOption(i);
+    optionsEl.appendChild(btn);
+  });
+}
+
+function selectOption(i) {
+  if (current.selectedIndex !== undefined) return;
+  current.selectedIndex = i;
+  const buttons = document.querySelectorAll("#options .option");
+  buttons.forEach((btn, idx) => {
+    btn.disabled = true;
+    if (idx === current.correctIndex) btn.classList.add("correct");
+    else if (idx === i) btn.classList.add("wrong");
+  });
+  document.getElementById("explanationSlot").innerHTML =
+    `<div class="explanation">${escapeHtml(current.explanation)}</div>`;
+  document.getElementById("nextRow").style.display = "flex";
+}
+
+function submitAndNext() {
+  log.push(current);
+  updateScore();
+  loadQuestion();
+}
+
+function renderSummary() {
+  const rows = log
+    .filter(q => q.selectedIndex !== undefined)
+    .map((q, i) => {
+      const correct = q.selectedIndex === q.correctIndex;
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td>${escapeHtml(q.topic)}</td>
+          <td>${escapeHtml(q.question)}</td>
+          <td>${escapeHtml(q.options[q.selectedIndex])}</td>
+          <td>${escapeHtml(q.options[q.correctIndex])}</td>
+          <td><span class="pill ${correct ? "good" : "bad"}">${correct ? "Correct" : "Wrong"}</span></td>
+        </tr>`;
+    }).join("");
+
+  appEl.innerHTML = `
+    <div class="card">
+      <h2 style="margin-top:0;font-size:1.05rem;">Summary</h2>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Topic</th><th>Question</th><th>Your answer</th><th>Correct answer</th><th>Result</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="row"><button class="primary" onclick="loadQuestion()">Continue quiz</button></div>
+    </div>`;
+}
+
+function restart() {
+  log = [];
+  asked = [];
+  current = null;
+  updateScore();
+  loadQuestion();
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str == null ? "" : String(str);
+  return div.innerHTML;
+}
+
+summaryBtn.onclick = renderSummary;
+restartBtn.onclick = restart;
+
+loadQuestion();
+</script>
+</body>
+</html>
