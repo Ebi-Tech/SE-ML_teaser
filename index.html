@@ -107,13 +107,54 @@
   .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
   .muted { color: var(--muted); }
   .error { color: var(--bad); }
-  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; }
-  .pill { padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
+  .pill { padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; white-space: nowrap; }
   .pill.good { background: rgba(62,207,142,0.15); color: var(--good); }
   .pill.bad { background: rgba(255,107,107,0.15); color: var(--bad); }
   .loading { color: var(--muted); text-align: center; padding: 30px 0; }
+
+  .explanation-text { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+  .terms {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .terms li { margin-bottom: 4px; }
+  .terms strong { color: var(--text); }
+
+  .summary-title { font-size: 1.1rem; margin: 4px 0 14px; }
+  .summary-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .summary-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .summary-q { font-size: 0.98rem; line-height: 1.45; margin-bottom: 10px; }
+  .answer-line { font-size: 0.88rem; margin-bottom: 4px; }
+  .answer-line.good { color: var(--good); }
+  .answer-line.bad { color: var(--bad); }
+  .summary-card .explanation-text { margin-top: 10px; }
+
+  @media (max-width: 480px) {
+    .wrap { padding: 16px 12px 40px; }
+    header { flex-direction: column; align-items: flex-start; gap: 4px; }
+    h1 { font-size: 1.1rem; }
+    .card, .summary-card { padding: 14px; }
+    .question, .summary-q { font-size: 0.95rem; }
+    .option { padding: 11px 12px; font-size: 0.9rem; }
+    button.primary, button.ghost { width: 100%; text-align: center; }
+    .row { flex-direction: column; }
+  }
 </style>
 </head>
 <body>
@@ -205,9 +246,21 @@ function selectOption(i) {
     if (idx === current.correctIndex) btn.classList.add("correct");
     else if (idx === i) btn.classList.add("wrong");
   });
-  document.getElementById("explanationSlot").innerHTML =
-    `<div class="explanation">${escapeHtml(current.explanation)}</div>`;
+  document.getElementById("explanationSlot").innerHTML = explanationBlockHtml(current);
   document.getElementById("nextRow").style.display = "flex";
+}
+
+function explanationBlockHtml(q) {
+  const termsHtml = (q.terms && q.terms.length)
+    ? `<ul class="terms">${q.terms.map(t =>
+        `<li><strong>${escapeHtml(t.term)}:</strong> ${escapeHtml(t.definition)}</li>`
+      ).join("")}</ul>`
+    : "";
+  return `
+    <div class="explanation">
+      <div class="explanation-text">${escapeHtml(q.explanation)}</div>
+      ${termsHtml}
+    </div>`;
 }
 
 function submitAndNext() {
@@ -223,20 +276,24 @@ function submitAndNext() {
 }
 
 function renderSummary() {
-  const rows = log
-    .filter(q => q.selectedIndex !== undefined)
-    .map((q, i) => {
-      const correct = q.selectedIndex === q.correctIndex;
-      return `
-        <tr>
-          <td>${i + 1}</td>
-          <td>${escapeHtml(q.topic)}</td>
-          <td>${escapeHtml(q.question)}</td>
-          <td>${escapeHtml(q.options[q.selectedIndex])}</td>
-          <td>${escapeHtml(q.options[q.correctIndex])}</td>
-          <td><span class="pill ${correct ? "good" : "bad"}">${correct ? "Correct" : "Wrong"}</span></td>
-        </tr>`;
-    }).join("");
+  const answered = log.filter(q => q.selectedIndex !== undefined);
+  const cards = answered.map((q, i) => {
+    const correct = q.selectedIndex === q.correctIndex;
+    const yourAnswerHtml = correct
+      ? `<div class="answer-line good">Your answer: ${escapeHtml(q.options[q.selectedIndex])}</div>`
+      : `<div class="answer-line bad">Your answer: ${escapeHtml(q.options[q.selectedIndex])}</div>
+         <div class="answer-line good">Correct answer: ${escapeHtml(q.options[q.correctIndex])}</div>`;
+    return `
+      <div class="summary-card">
+        <div class="summary-head">
+          <span class="tag">${escapeHtml(q.category)} · ${escapeHtml(q.topic)}</span>
+          <span class="pill ${correct ? "good" : "bad"}">${correct ? "Correct" : "Wrong"}</span>
+        </div>
+        <div class="summary-q">${i + 1}. ${escapeHtml(q.question)}</div>
+        ${yourAnswerHtml}
+        ${explanationBlockHtml(q)}
+      </div>`;
+  }).join("");
 
   const footer = roundComplete
     ? `<p class="muted" style="margin:14px 0 0;">Round of ${ROUND_SIZE} finished.</p>
@@ -244,18 +301,9 @@ function renderSummary() {
     : `<div class="row"><button class="primary" onclick="loadQuestion()">Continue quiz</button></div>`;
 
   appEl.innerHTML = `
-    <div class="card">
-      <h2 style="margin-top:0;font-size:1.05rem;">Summary</h2>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr><th>#</th><th>Topic</th><th>Question</th><th>Your answer</th><th>Correct answer</th><th>Result</th></tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-      ${footer}
-    </div>`;
+    <h2 class="summary-title">Summary</h2>
+    ${cards}
+    <div class="card">${footer}</div>`;
 }
 
 function restart() {

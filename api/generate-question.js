@@ -35,7 +35,10 @@ module.exports = async function handler(req, res) {
 
   const concept = pickConcept(excludeIds);
 
-  const systemPrompt = `You are a quiz generator for a software engineering and machine learning student.
+  const systemPrompt = `You are a patient tutor writing a quiz question for a young student learning software
+engineering and machine learning. They know the basics but are not an expert, so explanations must be in
+plain, everyday language, not academic or overly formal English. Short, clear sentences.
+
 Given ONE grounding concept, write ONE multiple-choice question that tests real understanding of it,
 not just term recall. The question should be reasonably explanatory: it can describe a short scenario
 or ask the student to reason about a tradeoff, not just "what does X stand for".
@@ -45,12 +48,26 @@ Respond with ONLY a JSON object, no markdown fences, no extra text, in exactly t
   "question": "string",
   "options": ["string", "string", "string", "string"],
   "correctIndex": 0,
-  "explanation": "string, 2-3 sentences explaining why the correct answer is right and briefly why at least one distractor is wrong"
+  "explanation": "string",
+  "terms": [{ "term": "string", "definition": "string" }]
 }
-Rules:
+
+Rules for "explanation":
+- Start with one short sentence naming the concept/topic this question is really about, e.g. "This is about how X works."
+- Then explain, in simple everyday words, why the correct option is right.
+- Then briefly say why the option a confused student would most likely pick instead is wrong.
+- Never just restate the option text, actually explain the reasoning a beginner needs.
+- The goal is clarity, not length: do not pad it, but do not leave it vague either. 3-5 short sentences is fine if each one earns its place.
+
+Rules for "terms":
+- List 1-4 technical terms that appear in the question or options and that a beginner might not already know.
+- Each definition must be one plain-English sentence, no jargon inside the definition itself.
+- If every term used is already common knowledge, return an empty array.
+
+Rules for the question itself:
 - Exactly 4 options, plausible distractors, only one clearly correct.
 - correctIndex is the 0-based index of the correct option.
-- Base the question ONLY on the grounding concept given. Do not introduce facts it doesn't support.`;
+- Base everything ONLY on the grounding concept given. Do not introduce facts it doesn't support.`;
 
   const userPrompt = `Grounding concept (category: ${concept.category}, topic: ${concept.topic}):
 """${concept.content}"""
@@ -118,6 +135,9 @@ Write the question now.`;
       options: parsed.options,
       correctIndex: parsed.correctIndex,
       explanation: parsed.explanation || "",
+      terms: Array.isArray(parsed.terms)
+        ? parsed.terms.filter((t) => t && t.term && t.definition).slice(0, 4)
+        : [],
     });
   } catch (err) {
     res.status(500).json({ error: `Server error: ${String(err && err.message ? err.message : err)}` });
