@@ -155,6 +155,22 @@
     button.primary, button.ghost { width: 100%; text-align: center; }
     .row { flex-direction: column; }
   }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    .wrap > .row, .start-card { display: none !important; }
+    .summary-card, .card {
+      background: #fff;
+      border: 1px solid #ccc;
+      break-inside: avoid;
+    }
+    .summary-q { color: #111; }
+    .explanation-text, .terms, .muted { color: #333; }
+    .tag { background: #eee; color: #333; }
+    .pill.good { background: #e6f7ee; color: #1a7a4c; }
+    .pill.bad { background: #fdeaea; color: #b3261e; }
+    .row button { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -195,6 +211,19 @@ function updateScore() {
   }
   summaryBtn.style.display = answered.length ? "inline-block" : "none";
   restartBtn.style.display = log.length ? "inline-block" : "none";
+}
+
+function renderStartScreen() {
+  appEl.innerHTML = `
+    <div class="card start-card">
+      <h2 style="margin-top:0;font-size:1.1rem;">Ready when you are</h2>
+      <p class="muted" style="line-height:1.5;">
+        Each round is ${ROUND_SIZE} questions mixing software engineering and ML concepts.
+        You'll get an explanation and key term definitions after every answer, and a full
+        summary you can export at the end.
+      </p>
+      <div class="row"><button class="primary" onclick="loadQuestion()">Get started</button></div>
+    </div>`;
 }
 
 async function loadQuestion() {
@@ -297,13 +326,25 @@ function renderSummary() {
 
   const footer = roundComplete
     ? `<p class="muted" style="margin:14px 0 0;">Round of ${ROUND_SIZE} finished.</p>
-       <div class="row"><button class="primary" onclick="restart()">Start new round</button></div>`
-    : `<div class="row"><button class="primary" onclick="loadQuestion()">Continue quiz</button></div>`;
+       <div class="row">
+         <button class="primary" onclick="restart()">Start new round</button>
+         <button class="ghost" onclick="exportPdf()">Export PDF</button>
+       </div>`
+    : `<div class="row">
+         <button class="primary" onclick="loadQuestion()">Continue quiz</button>
+         <button class="ghost" onclick="exportPdf()">Export PDF</button>
+       </div>`;
 
   appEl.innerHTML = `
     <h2 class="summary-title">Summary</h2>
     ${cards}
     <div class="card">${footer}</div>`;
+}
+
+function exportPdf() {
+  document.body.classList.add("printing");
+  window.print();
+  setTimeout(() => document.body.classList.remove("printing"), 300);
 }
 
 function restart() {
@@ -324,7 +365,7 @@ function escapeHtml(str) {
 summaryBtn.onclick = renderSummary;
 restartBtn.onclick = restart;
 
-loadQuestion();
+renderStartScreen();
 </script>
 </body>
 </html>
