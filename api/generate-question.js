@@ -3,9 +3,21 @@ const knowledgeBase = require("./knowledge-base.js");
 const GROQ_MODEL = "openai/gpt-oss-120b";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
+// Share of questions drawn from ML, math and capstone topics (the rest are general SE).
+const ML_SHARE = 0.75;
+// Chance that a topic with a worked example becomes a calculation question.
+const CALC_SHARE = 0.8;
+
+const ML_PREFIXES = ["ml-", "nn-", "mlops-", "cap-", "math-", "clu-", "nlp-"];
+const isML = (c) => ML_PREFIXES.some((p) => c.id.startsWith(p));
+
 function pickConcept(excludeIds) {
-  const pool = knowledgeBase.filter((c) => !excludeIds.includes(c.id));
-  const source = pool.length > 0 ? pool : knowledgeBase; // reset once exhausted
+  const available = knowledgeBase.filter((c) => !excludeIds.includes(c.id));
+  const pool = available.length > 0 ? available : knowledgeBase; // reset once exhausted
+  const mlPool = pool.filter(isML);
+  const sePool = pool.filter((c) => !isML(c));
+  const useML = mlPool.length > 0 && (sePool.length === 0 || Math.random() < ML_SHARE);
+  const source = useML ? mlPool : sePool;
   return source[Math.floor(Math.random() * source.length)];
 }
 
@@ -34,14 +46,15 @@ module.exports = async function handler(req, res) {
   }
 
   const concept = pickConcept(excludeIds);
+  const wantCalc = Boolean(concept.calc) && Math.random() < CALC_SHARE;
 
-  const systemPrompt = `You are a patient tutor writing a quiz question for a young student learning software
-engineering and machine learning. They know the basics but are not an expert, so explanations must be in
-plain, everyday language, not academic or overly formal English. Short, clear sentences.
+  const modeLine = wantCalc
+    ? `QUESTION TYPE: CALCULATION. Ask the student to work out a number by hand using the formula and worked example in the grounding concept. You may change the numbers, but keep them small and friendly, and recompute very carefully. The correct option must equal your own result. Make each wrong option come from a typical mistake (forgot to divide, used the wrong formula, swapped two values, skipped a step). All four options must be in the same format (all numbers, or all short expressions).`
+    : `QUESTION TYPE: UNDERSTANDING. Ask a short scenario or "what would happen if" question that tests real understanding of the concept, not memorised wording.`;
 
-Given ONE grounding concept, write ONE multiple-choice question that tests real understanding of it,
-not just term recall. The question should be reasonably explanatory: it can describe a short scenario
-or ask the student to reason about a tradeoff, not just "what does X stand for".
+  const systemPrompt = `You are a friendly tutor writing ONE multiple-choice quiz question for a young student learning software engineering and machine learning. Explain things the way you would to a curious 10 year old: plain words, short sentences, no jargon without a definition.
+
+${modeLine}
 
 Respond with ONLY a JSON object, no markdown fences, no extra text, in exactly this shape:
 {
@@ -52,22 +65,22 @@ Respond with ONLY a JSON object, no markdown fences, no extra text, in exactly t
   "terms": [{ "term": "string", "definition": "string" }]
 }
 
-Rules for "explanation":
-- Start with one short sentence naming the concept/topic this question is really about, e.g. "This is about how X works."
-- Then explain, in simple everyday words, why the correct option is right.
-- Then briefly say why the option a confused student would most likely pick instead is wrong.
-- Never just restate the option text, actually explain the reasoning a beginner needs.
-- The goal is clarity, not length: do not pad it, but do not leave it vague either. 3-5 short sentences is fine if each one earns its place.
+Rules for "explanation" (use a blank line, written as \\n\\n inside the JSON string, between the three parts):
+- Part 1: one short line that starts with "Topic:" and names the concept being tested.
+- Part 2: 2 to 4 very short sentences. Use one everyday comparison a child knows (a lunch queue, sorting sweets, a school bag, a shop counter, a football team). Say WHY the right option is right, and WHY the most tempting wrong option is wrong. For a calculation question, show the steps with the real numbers ("Step 1: ... Step 2: ...") and the final answer.
+- Part 3: one sentence that starts with "Real-life use:" and gives a concrete use, ideally from phones, voice assistants, shops, schools, maps or farming.
+- Keep the whole explanation under about 90 words. Be clear, never vague, and never just repeat the option text.
 
 Rules for "terms":
-- List 1-4 technical terms that appear in the question or options and that a beginner might not already know.
-- Each definition must be one plain-English sentence, no jargon inside the definition itself.
-- If every term used is already common knowledge, return an empty array.
+- List 1 to 4 technical words from the question or options that a beginner may not know.
+- Each definition is one plain sentence a child could follow, with no jargon inside it.
+- If every word is already common knowledge, return an empty array.
 
-Rules for the question itself:
-- Exactly 4 options, plausible distractors, only one clearly correct.
-- correctIndex is the 0-based index of the correct option.
-- Base everything ONLY on the grounding concept given. Do not introduce facts it doesn't support.`;
+Rules for the question:
+- Exactly 4 options, only one correct, correctIndex is the 0-based index of the correct option.
+- Write maths in plain text only (x for times, / for divide, ^ for power, sqrt(), no LaTeX).
+- Do not give away the answer in the question.
+- Base everything ONLY on the grounding concept given. Do not add facts it does not support.`;
 
   const userPrompt = `Grounding concept (category: ${concept.category}, topic: ${concept.topic}):
 """${concept.content}"""
@@ -83,7 +96,7 @@ Write the question now.`;
       },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        temperature: 0.7,
+        temperature: wantCalc ? 0.4 : 0.7,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },

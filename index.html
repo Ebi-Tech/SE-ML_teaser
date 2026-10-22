@@ -112,7 +112,7 @@
   .pill.bad { background: rgba(255,107,107,0.15); color: var(--bad); }
   .loading { color: var(--muted); text-align: center; padding: 30px 0; }
 
-  .explanation-text { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+  .explanation-text { color: var(--muted); font-size: 0.9rem; line-height: 1.5; white-space: pre-line; }
   .terms {
     margin: 10px 0 0;
     padding-left: 18px;
@@ -190,7 +190,7 @@
 
 <script>
 const API_URL = "/api/generate-question";
-const ROUND_SIZE = 10;
+const ROUND_SIZE = 15;
 let log = [];       // {conceptId, category, topic, question, options, correctIndex, explanation, selectedIndex}
 let current = null; // the question currently on screen
 let asked = [];      // conceptIds asked this session, for excludeIds
@@ -365,6 +365,7 @@ function escapeHtml(str) {
 summaryBtn.onclick = renderSummary;
 restartBtn.onclick = restart;
 
+updateScore();
 renderStartScreen();
 </script>
 </body>
